@@ -28,15 +28,21 @@ struct Cell
         if      (state == State::Flagged) { setState(State::Hidden);  }
         else if (state == State::Hidden ) { setState(State::Flagged); }
     }
-    bool isShown()
-    {
-        return state == State::Shown;
-    }
+
     bool isHidden()
     {
         return state == State::Hidden;
     }
 
+    bool isFlagged()
+    {
+        return state == State::Flagged;
+    }
+
+    bool isShown()
+    {
+        return state == State::Shown;
+    }
 };
 
 struct Mine : Cell
@@ -170,7 +176,21 @@ struct Field
 
     bool showCell(int col, int row)
     {
-        if (!at(col, row)->isHidden()) { return true; } // Should not open flagged or shown cells
+        const bool isEmpty = dynamic_cast<const Empty*>(at(col, row).get()) != nullptr;
+        const bool seesMines = at(col, row)->neighbouringMines > 0;
+
+        // If the cell is not hidden, it should be ignored in most cases.
+        // In the scenario where it is shown and is empty and has no neighbouring mines however,
+        // it can be useful to still run the expansion algorithm from it.
+        // In the scenario where a cell, where all neighbouring cells are flagged,
+        // is shown, there will be no expansion. But if one of the neighbouring cells were to be
+        // unflagged later, the already shown cell could be shown again to expand to the unflagged
+        // positions.
+        if (!(at(col, row)->isShown() && isEmpty && !seesMines) &&
+            !at(col, row)->isHidden())
+        {
+            return true;
+        }
 
         if (dynamic_cast<const Empty*>(at(col, row).get()) &&
             at(col, row)->neighbouringMines == 0)
@@ -196,7 +216,7 @@ struct Field
                 for (const auto& [rr, cc] : neigbours(r, c))
                 {
                     if (rr < 0 || cc < 0 || rr >= ROWS || cc >= COLS) { continue; }
-                    if (container[rr][cc]->isShown()) { continue; }
+                    if (!container[rr][cc]->isHidden()) { continue; }
 
                     container[rr][cc]->show();
                     if (container[rr][cc]->neighbouringMines == 0)
@@ -218,6 +238,23 @@ struct Field
             {
                 if (dynamic_cast<const Mine*>(cell.get()) &&
                     cell->isHidden())
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    bool noEmptiesFlagged()
+    {
+        for (const auto& row : container)
+        {
+            for (auto& cell : row)
+            {
+                if (dynamic_cast<const Empty*>(cell.get()) &&
+                    cell->isFlagged())
                 {
                     return false;
                 }
@@ -250,8 +287,7 @@ int main() {
 
     std::srand(std::time(nullptr));
 
-    // size_t cursorCol{ (COLS - 1) / 2 }, cursorRow{ (ROWS - 1) / 2 };
-    size_t cursorCol{ }, cursorRow{ };
+    size_t cursorCol{ (COLS - 1) / 2 }, cursorRow{ (ROWS - 1) / 2 };
 
     Field field;
     field.displayField();
@@ -273,7 +309,14 @@ int main() {
         case 'q': quit = true;
         }
 
-        if (quit) { break; }
+        if (quit)
+        {
+            field.showAllMines();
+            field.displayField(true);
+            std::cout << "\nYou gave up...\n";
+            break;
+        }
+
         if (!goodMove)
         {
             field.showAllMines();
@@ -282,7 +325,8 @@ int main() {
             break;
         }
 
-        if (field.allMinesFlagged())
+        if (field.allMinesFlagged() &&
+            field.noEmptiesFlagged())
         {
             field.displayField(true);
             std::cout << "\nYou win! You found all " << field.mineCount << " mines!\n";
