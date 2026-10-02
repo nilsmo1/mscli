@@ -11,7 +11,7 @@
 #define ROWS 15
 #define COLS 17
 
-#define MINE_PROBABILITY_PERCENTAGE 15
+#define MINE_PROBABILITY_PERCENTAGE 0
 
 enum struct State { Hidden, Flagged, Shown };
 
@@ -91,6 +91,7 @@ struct Empty : Cell
 struct Field
 {
     std::array<std::array<std::unique_ptr<Cell>, COLS>, ROWS> container;
+    size_t mineCount = 0;
 
     Field() { init(); }
 
@@ -107,6 +108,7 @@ struct Field
                 else
                 {
                     container[row][col] = std::make_unique<Mine>();
+                    mineCount++;
                 }
             }
         }
@@ -241,7 +243,7 @@ struct Field
 };
 
 std::shared_ptr<termios> setupWindow();
-void resetWindow(const std::shared_ptr<termios>& savedAttributes);
+void resetWindow(const std::shared_ptr<termios>& savedAttributes, const bool clearField);
 
 int main() {
     std::shared_ptr<termios> savedAttributes = setupWindow();
@@ -283,7 +285,7 @@ int main() {
         if (field.allMinesFlagged())
         {
             field.displayField(true);
-            std::cout << "\nYou win!\n";
+            std::cout << "\nYou win! You found all " << field.mineCount << " mines!\n";
             break;
         }
 
@@ -291,7 +293,7 @@ int main() {
         field.displayCursor(cursorCol, cursorRow);
     }
 
-    resetWindow(savedAttributes);
+    resetWindow(savedAttributes, true);
 
     return 0;
 }
@@ -313,8 +315,13 @@ std::shared_ptr<termios> setupWindow()
     return std::make_shared<termios>(saved_attributes);
 }
 
-void resetWindow(const std::shared_ptr<termios>& saved_attributes)
+void resetWindow(const std::shared_ptr<termios>& saved_attributes, const bool clearField)
 {
+    if (clearField)
+    {
+        std::cin.get();
+        moveUpToBeginningOfLine(ROWS + 2);
+    }
     showCursor();
     tcsetattr(0, TCSANOW, saved_attributes.get());
 }

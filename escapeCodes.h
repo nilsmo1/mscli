@@ -2,6 +2,18 @@
 
 #include <iostream>
 
+inline void moveUpToBeginningOfLine(const size_t& n)
+{
+    if (n < 1) { return; }
+    std::cout << "\e[" << n << 'F';
+}
+
+inline void moveDownToBeginningOfLine(const size_t& n)
+{
+    if (n < 1) { return; }
+    std::cout << "\e[" << n << 'E';
+}
+
 inline void moveUp(const size_t& n)
 {
     if (n < 1) { return; }
