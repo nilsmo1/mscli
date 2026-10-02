@@ -5,6 +5,7 @@
 #include <termios.h>
 #include <memory>
 #include <cstdint>
+#include <vector>
 #include "escapeCodes.h"
 
 #define ROWS 15
@@ -27,6 +28,15 @@ struct Cell
         if      (state == State::Flagged) { setState(State::Hidden);  }
         else if (state == State::Hidden ) { setState(State::Flagged); }
     }
+    bool isShown()
+    {
+        return state == State::Shown;
+    }
+    bool isHidden()
+    {
+        return state == State::Hidden;
+    }
+
 };
 
 struct Mine : Cell
@@ -80,55 +90,66 @@ struct Empty : Cell
 
 struct Field
 {
-    std::array<std::unique_ptr<Cell>, ROWS * COLS> container;
+    std::array<std::array<std::unique_ptr<Cell>, COLS>, ROWS> container;
 
     Field() { init(); }
 
     void init()
     {
-        for (size_t i{}; i < ROWS * COLS; ++i)
+        for (size_t row{}; row < ROWS; ++row)
         {
-            if ((std::rand() % 100) + 1 > MINE_PROBABILITY_PERCENTAGE)
+            for (size_t col{}; col < COLS; ++col)
             {
-                container[i] = std::make_unique<Empty>();
+                if ((std::rand() % 100) + 1 > MINE_PROBABILITY_PERCENTAGE)
+                {
+                    container[row][col] = std::make_unique<Empty>();
+                }
+                else
+                {
+                    container[row][col] = std::make_unique<Mine>();
+                }
             }
-            else
-            {
-                container[i] = std::make_unique<Mine>();
-            }
-            container[i]->show();
         }
 
-        for (int i{}; i < ROWS * COLS; ++i)
+        for (int row{}; row < ROWS; ++row)
         {
-            const std::array<const int, 8> neigbours =
+            for (int col{}; col < COLS; ++col)
             {
-                i - COLS - 1, i - COLS, i - COLS + 1,
-                i - 1,                         i + 1,
-                i + COLS - 1, i + COLS, i + COLS + 1,
-            };
+                const std::array<std::array<int, 2>, 8> neigbours =
+                {{
+                    { row - 1, col - 1 }, { row - 1, col }, { row - 1, col + 1 },
+                    { row    , col - 1 },                   { row    , col + 1 },
+                    { row + 1, col - 1 }, { row + 1, col }, { row + 1, col + 1 },
+                }};
 
-            for (const int& neighbourIndex : neigbours)
-            {
-                if (neighbourIndex < 0 || neighbourIndex >= ROWS * COLS) { continue; }
-                if (dynamic_cast<const Mine*>(container[neighbourIndex].get()))
+                for (const auto& [r, c] : neigbours)
                 {
-                    container[i]->neighbouringMines++;
+                    if (r < 0 || c < 0 || r >= ROWS || c >= COLS) { continue; }
+                    if (dynamic_cast<const Mine*>(container[r][c].get()))
+                    {
+                        container[row][col]->neighbouringMines++;
+                    }
                 }
             }
         }
     }
 
-    void displayField(bool initial = false) const
+    void displayField(bool gameOver = false) const
     {
-        for (size_t i{}; i < ROWS * COLS; ++i)
+        for (size_t row{}; row < ROWS; ++row)
         {
-            if (i != 0 && i % COLS == 0) { std::cout << " \n"; }
-            std::cout << ' ' << container[i]->symbol();
+            for (size_t col{}; col < COLS; ++col)
+            {
+                std::cout << ' ' << container[row][col]->symbol();
+            }
+            std::cout << " \n";
         }
-        std::cout << " \n";
-        moveUp(ROWS);
-        moveLeft(COLS);
+
+        if (!gameOver)
+        {
+            moveUp(ROWS);
+            moveLeft(COLS);
+        }
     }
 
     void displayCursor(const size_t& col, const size_t& row)
@@ -142,15 +163,88 @@ struct Field
 
     std::unique_ptr<Cell>& at(const size_t& col, const size_t& row)
     {
-        return container[row * COLS + col];
+        return container[row][col];
+    }
+
+    bool showCell(int col, int row)
+    {
+        if (!at(col, row)->isHidden()) { return true; } // Should not open flagged or shown cells
+
+        if (dynamic_cast<const Empty*>(at(col, row).get()) &&
+            at(col, row)->neighbouringMines == 0)
+        {
+            auto neigbours = [](int row, int col)
+            {
+                return std::array<std::array<int, 2>, 8>
+                {{
+                    { row - 1, col - 1 }, { row - 1, col }, { row - 1, col + 1 },
+                    { row    , col - 1 },                   { row    , col + 1 },
+                    { row + 1, col - 1 }, { row + 1, col }, { row + 1, col + 1 },
+                }};
+            };
+
+            std::vector<std::array<int, 2>> queue;
+            queue.push_back({ row, col });
+
+            while (!queue.empty())
+            {
+                const auto& [r, c] = queue.back();
+                queue.pop_back();
+
+                for (const auto& [rr, cc] : neigbours(r, c))
+                {
+                    if (rr < 0 || cc < 0 || rr >= ROWS || cc >= COLS) { continue; }
+                    if (container[rr][cc]->isShown()) { continue; }
+
+                    container[rr][cc]->show();
+                    if (container[rr][cc]->neighbouringMines == 0)
+                    {
+                        queue.push_back({ rr, cc });
+                    }
+                }
+            }
+        }
+
+        return at(col, row)->show();
+    }
+
+    bool allMinesFlagged()
+    {
+        for (const auto& row : container)
+        {
+            for (auto& cell : row)
+            {
+                if (dynamic_cast<const Mine*>(cell.get()) &&
+                    cell->isHidden())
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    void showAllMines()
+    {
+        for (const auto& row : container)
+        {
+            for (auto& cell : row)
+            {
+                if (dynamic_cast<const Mine*>(cell.get()))
+                {
+                    cell->setState(State::Shown);
+                }
+            }
+        }
     }
 };
 
-std::shared_ptr<termios> setup_window();
-void reset_window(const std::shared_ptr<termios>& saved_attributes);
+std::shared_ptr<termios> setupWindow();
+void resetWindow(const std::shared_ptr<termios>& savedAttributes);
 
 int main() {
-    std::shared_ptr<termios> saved_attributes = setup_window();
+    std::shared_ptr<termios> savedAttributes = setupWindow();
 
     std::srand(std::time(nullptr));
 
@@ -158,37 +252,51 @@ int main() {
     size_t cursorCol{ }, cursorRow{ };
 
     Field field;
-    field.displayField(true);
+    field.displayField();
     field.displayCursor(cursorCol, cursorRow);
 
     bool goodMove = true;
     bool quit = false;
     char inputKey;
-    while (std::cin >> inputKey) {
-        switch(inputKey) {
-            case 'w': if (cursorRow != 0     ) cursorRow--; break;
-            case 's': if (cursorRow <  ROWS-1) cursorRow++ ; break;
-            case 'a': if (cursorCol != 0     ) cursorCol-- ; break;
-            case 'd': if (cursorCol <  COLS-1) cursorCol++ ; break;
-            case 'e': goodMove = field.at(cursorCol, cursorRow)->show(); break;
-            case 'f': field.at(cursorCol, cursorRow)->flag(); break;
-            case 'q': quit = true;
+    while (std::cin >> inputKey)
+    {
+        switch(inputKey)
+        {
+        case 'w': if (cursorRow != 0     ) cursorRow--; break;
+        case 's': if (cursorRow <  ROWS-1) cursorRow++ ; break;
+        case 'a': if (cursorCol != 0     ) cursorCol-- ; break;
+        case 'd': if (cursorCol <  COLS-1) cursorCol++ ; break;
+        case 'e': goodMove = field.showCell(cursorCol, cursorRow); break;
+        case 'f': field.at(cursorCol, cursorRow)->flag(); break;
+        case 'q': quit = true;
         }
 
         if (quit) { break; }
-        if (!goodMove) { /*game over*/ }
+        if (!goodMove)
+        {
+            field.showAllMines();
+            field.displayField(true);
+            std::cout << "\nYou lose...\n";
+            break;
+        }
+
+        if (field.allMinesFlagged())
+        {
+            field.displayField(true);
+            std::cout << "\nYou win!\n";
+            break;
+        }
 
         field.displayField();
         field.displayCursor(cursorCol, cursorRow);
     }
 
-
-    reset_window(saved_attributes);
+    resetWindow(savedAttributes);
 
     return 0;
 }
 
-std::shared_ptr<termios> setup_window()
+std::shared_ptr<termios> setupWindow()
 {
     termios tattr;
     termios saved_attributes;
@@ -205,7 +313,7 @@ std::shared_ptr<termios> setup_window()
     return std::make_shared<termios>(saved_attributes);
 }
 
-void reset_window(const std::shared_ptr<termios>& saved_attributes)
+void resetWindow(const std::shared_ptr<termios>& saved_attributes)
 {
     showCursor();
     tcsetattr(0, TCSANOW, saved_attributes.get());
