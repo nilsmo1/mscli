@@ -4,9 +4,10 @@ A simple, terminal based, minesweeper game written in C++
 ## Installation
 ```sh
 make run
+```
+or
 
-(or)
-
+```sh
 make
 ./minesweeper
 ```
