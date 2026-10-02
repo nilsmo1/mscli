@@ -11,7 +11,7 @@
 #define ROWS 15
 #define COLS 17
 
-#define MINE_PROBABILITY_PERCENTAGE 0
+#define MINE_PROBABILITY_PERCENTAGE 15
 
 enum struct State { Hidden, Flagged, Shown };
 
