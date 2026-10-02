@@ -13,271 +13,69 @@
 
 #define MINE_PROBABILITY_PERCENTAGE 15
 
-enum struct State { Hidden, Flagged, Shown };
+// NEIGHBOURS N
+// max neighbours = 0b1000
+//
+// TYPE T
+// empty = 0b0
+// mine  = 0b1
+//
+// STATE S
+// hidden  = 0b00
+// flagged = 0b01
+// shown   = 0b10
+//
+// cell = 0b 0 NNNN T SS
 
-struct Cell
-{
-    State state = State::Hidden;
-    int8_t neighbouringMines = 0;
-
-    virtual std::string symbol() const = 0;
-    virtual bool show() = 0;
-    void setState(const State& s) { state = s; }
-    void flag()
-    {
-        if      (state == State::Flagged) { setState(State::Hidden);  }
-        else if (state == State::Hidden ) { setState(State::Flagged); }
+std::array<std::array<uint8_t, COLS>, ROWS> f;
+void init() {
+    for (size_t r{}; r < ROWS; ++r) {
+        for (size_t c{}; c < COLS; ++c) {
+            const auto roll = (std::rand() % 100) + 1 > MINE_PROBABILITY_PERCENTAGE;
+            f[r][c] = roll ? 0b0 : 0b100;
+        }
     }
-
-    bool isHidden()
-    {
-        return state == State::Hidden;
+}
+char symbol(uint8_t cell) {
+    const auto n = (cell >> 3) % 16;
+    const auto t = (cell >> 2) % 2;
+    const auto s = cell % 4;
+    switch (s) {
+        case 0: return '.';
+        case 1: return '?';
+        case 2: return t ? '@' : (n > 0 ? (char)('0' + n) : ' ');
     }
-
-    bool isFlagged()
-    {
-        return state == State::Flagged;
-    }
-
-    bool isShown()
-    {
-        return state == State::Shown;
-    }
+    return '!';
 };
-
-struct Mine : Cell
-{
-    std::string symbol() const override
-    {
-        switch (state)
-        {
-        case State::Hidden: return ".";
-        case State::Flagged: return "?";
-        case State::Shown: return "@";
-        default: return "!";
-        }
-    }
-
-    bool show() override
-    {
-        if (state != State::Hidden) { return true; }
-        setState(State::Shown);
-        return false;
-    }
-};
-
-struct Empty : Cell
-{
-    std::string numberOrEmpty() const
-    {
-        return neighbouringMines > 0
-            ? std::to_string(neighbouringMines)
-            : " ";
-    }
-
-    std::string symbol() const override
-    {
-        switch (state)
-        {
-        case State::Hidden: return ".";
-        case State::Flagged: return "?";
-        case State::Shown: return numberOrEmpty();
-        default: return "!";
-        }
-    }
-
-    bool show() override
-    {
-        if (state != State::Hidden) { return true; }
-        setState(State::Shown);
-        return true;
-    }
-};
-
-struct Field
-{
-    std::array<std::array<std::unique_ptr<Cell>, COLS>, ROWS> container;
-    size_t mineCount = 0;
-
-    Field() { init(); }
-
-    void init()
-    {
-        for (size_t row{}; row < ROWS; ++row)
-        {
-            for (size_t col{}; col < COLS; ++col)
-            {
-                if ((std::rand() % 100) + 1 > MINE_PROBABILITY_PERCENTAGE)
-                {
-                    container[row][col] = std::make_unique<Empty>();
-                }
-                else
-                {
-                    container[row][col] = std::make_unique<Mine>();
-                    mineCount++;
-                }
+void display(uint8_t r, uint8_t c, bool goUp = true) {
+    for (size_t rr{}; rr < ROWS; ++rr) {
+        for (size_t cc{}; cc < COLS; ++cc) {
+            if (r == rr && c == cc) {
+                std::cout << '(' << symbol(f[rr][cc]) << ')';
+            } else if (r == rr && c + 1 == cc) {
+                std::cout << symbol(f[rr][cc]);
+            } else {
+                std::cout << ' ' << symbol(f[rr][cc]);
             }
         }
-
-        for (int row{}; row < ROWS; ++row)
-        {
-            for (int col{}; col < COLS; ++col)
-            {
-                const std::array<std::array<int, 2>, 8> neigbours =
-                {{
-                    { row - 1, col - 1 }, { row - 1, col }, { row - 1, col + 1 },
-                    { row    , col - 1 },                   { row    , col + 1 },
-                    { row + 1, col - 1 }, { row + 1, col }, { row + 1, col + 1 },
-                }};
-
-                for (const auto& [r, c] : neigbours)
-                {
-                    if (r < 0 || c < 0 || r >= ROWS || c >= COLS) { continue; }
-                    if (dynamic_cast<const Mine*>(container[r][c].get()))
-                    {
-                        container[row][col]->neighbouringMines++;
-                    }
-                }
-            }
-        }
+        std::cout << " \n";
     }
+    if (goUp) { moveUpToBeginningOfLine(ROWS); }
+}
+bool open(uint8_t r, uint8_t c) {
+    const auto n = (f[r][c] >> 3) % 16;
+    const auto t = (f[r][c] >> 2) % 2;
+    const auto s = f[r][c] % 4;
 
-    void displayField(bool gameOver = false) const
-    {
-        for (size_t row{}; row < ROWS; ++row)
-        {
-            for (size_t col{}; col < COLS; ++col)
-            {
-                std::cout << ' ' << container[row][col]->symbol();
-            }
-            std::cout << " \n";
-        }
+    if (s > 0) { return false; }
 
-        if (!gameOver)
-        {
-            moveUp(ROWS);
-            moveLeft(COLS);
-        }
-    }
+    f[r][c] = ((f[r][c] >> 2) << 2) + 2;
+    if (t) { return true; }
 
-    void displayCursor(const size_t& col, const size_t& row)
-    {
-        moveDown(row);
-        moveRight(2 * col);
-        highlightCell();
-        moveUp(row);
-        moveLeft(2 * col + 3); // Moving back left, accounting for the extra characters placed
-    }
+    // expand here
 
-    std::unique_ptr<Cell>& at(const size_t& col, const size_t& row)
-    {
-        return container[row][col];
-    }
-
-    bool showCell(int col, int row)
-    {
-        const bool isEmpty = dynamic_cast<const Empty*>(at(col, row).get()) != nullptr;
-        const bool seesMines = at(col, row)->neighbouringMines > 0;
-
-        // If the cell is not hidden, it should be ignored in most cases.
-        // In the scenario where it is shown and is empty and has no neighbouring mines however,
-        // it can be useful to still run the expansion algorithm from it.
-        // In the scenario where a cell, where all neighbouring cells are flagged,
-        // is shown, there will be no expansion. But if one of the neighbouring cells were to be
-        // unflagged later, the already shown cell could be shown again to expand to the unflagged
-        // positions.
-        if (!(at(col, row)->isShown() && isEmpty && !seesMines) &&
-            !at(col, row)->isHidden())
-        {
-            return true;
-        }
-
-        if (dynamic_cast<const Empty*>(at(col, row).get()) &&
-            at(col, row)->neighbouringMines == 0)
-        {
-            auto neigbours = [](int row, int col)
-            {
-                return std::array<std::array<int, 2>, 8>
-                {{
-                    { row - 1, col - 1 }, { row - 1, col }, { row - 1, col + 1 },
-                    { row    , col - 1 },                   { row    , col + 1 },
-                    { row + 1, col - 1 }, { row + 1, col }, { row + 1, col + 1 },
-                }};
-            };
-
-            std::vector<std::array<int, 2>> queue;
-            queue.push_back({ row, col });
-
-            while (!queue.empty())
-            {
-                const auto& [r, c] = queue.back();
-                queue.pop_back();
-
-                for (const auto& [rr, cc] : neigbours(r, c))
-                {
-                    if (rr < 0 || cc < 0 || rr >= ROWS || cc >= COLS) { continue; }
-                    if (!container[rr][cc]->isHidden()) { continue; }
-
-                    container[rr][cc]->show();
-                    if (container[rr][cc]->neighbouringMines == 0)
-                    {
-                        queue.push_back({ rr, cc });
-                    }
-                }
-            }
-        }
-
-        return at(col, row)->show();
-    }
-
-    bool allMinesFlagged()
-    {
-        for (const auto& row : container)
-        {
-            for (auto& cell : row)
-            {
-                if (dynamic_cast<const Mine*>(cell.get()) &&
-                    cell->isHidden())
-                {
-                    return false;
-                }
-            }
-        }
-
-        return true;
-    }
-
-    bool noEmptiesFlagged()
-    {
-        for (const auto& row : container)
-        {
-            for (auto& cell : row)
-            {
-                if (dynamic_cast<const Empty*>(cell.get()) &&
-                    cell->isFlagged())
-                {
-                    return false;
-                }
-            }
-        }
-
-        return true;
-    }
-
-    void showAllMines()
-    {
-        for (const auto& row : container)
-        {
-            for (auto& cell : row)
-            {
-                if (dynamic_cast<const Mine*>(cell.get()))
-                {
-                    cell->setState(State::Shown);
-                }
-            }
-        }
-    }
-};
+    return false;
+}
 
 std::shared_ptr<termios> setupWindow();
 void resetWindow(const std::shared_ptr<termios>& savedAttributes, const bool clearField);
@@ -287,57 +85,50 @@ int main() {
 
     std::srand(std::time(nullptr));
 
-    size_t cursorCol{ (COLS - 1) / 2 }, cursorRow{ (ROWS - 1) / 2 };
+    uint8_t r{ (ROWS - 1) / 2 };
+    uint8_t c{ (COLS - 1) / 2 };
 
-    Field field;
-    field.displayField();
-    field.displayCursor(cursorCol, cursorRow);
+    init();
+    display(r, c);
 
-    bool goodMove = true;
     bool quit = false;
     char inputKey;
     while (std::cin >> inputKey)
     {
-        switch(inputKey)
+        const auto n = (f[r][c] >> 3) % 16;
+        const auto t = (f[r][c] >> 2) % 2;
+        const auto s = f[r][c] % 4;
+
+        switch (inputKey)
         {
-        case 'w': if (cursorRow != 0     ) cursorRow--; break;
-        case 's': if (cursorRow <  ROWS-1) cursorRow++ ; break;
-        case 'a': if (cursorCol != 0     ) cursorCol-- ; break;
-        case 'd': if (cursorCol <  COLS-1) cursorCol++ ; break;
-        case 'e': goodMove = field.showCell(cursorCol, cursorRow); break;
-        case 'f': field.at(cursorCol, cursorRow)->flag(); break;
-        case 'q': quit = true;
+        case 'w': if (r != 0     ) r--; break;
+        case 's': if (r <  ROWS-1) r++ ; break;
+        case 'a': if (c != 0     ) c-- ; break;
+        case 'd': if (c <  COLS-1) c++ ; break;
+        case 'e': quit = open(r, c); break;
+        case 'f': f[r][c] = ((f[r][c] >> 2) << 2) + 1; break;
+        case 'q': quit = true; break;
         }
 
         if (quit)
         {
-            field.showAllMines();
-            field.displayField(true);
-            std::cout << "\nYou gave up...\n";
+            // showAllMines();
+            display(r, c, false);
             break;
         }
 
-        if (!goodMove)
-        {
-            field.showAllMines();
-            field.displayField(true);
-            std::cout << "\nYou lose...\n";
-            break;
-        }
+        // if (field.allMinesFlagged() &&
+        //     field.noEmptiesFlagged())
+        // {
+        //     field.displayField(true);
+        //     std::cout << "\nYou win! You found all " << field.mineCount << " mines!\n";
+        //     break;
+        // }
 
-        if (field.allMinesFlagged() &&
-            field.noEmptiesFlagged())
-        {
-            field.displayField(true);
-            std::cout << "\nYou win! You found all " << field.mineCount << " mines!\n";
-            break;
-        }
-
-        field.displayField();
-        field.displayCursor(cursorCol, cursorRow);
+        display(r, c);
     }
 
-    resetWindow(savedAttributes, true);
+    resetWindow(savedAttributes, false);
 
     return 0;
 }
