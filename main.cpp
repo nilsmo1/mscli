@@ -52,8 +52,8 @@ struct Mine : Cell
         switch (state)
         {
         case State::Hidden: return ".";
-        case State::Flagged: return "?";
-        case State::Shown: return "@";
+        case State::Flagged: return "\e[7m?\e[27m";
+        case State::Shown: return "\e[2m@\e[22m";
         default: return "!";
         }
     }
@@ -80,7 +80,7 @@ struct Empty : Cell
         switch (state)
         {
         case State::Hidden: return ".";
-        case State::Flagged: return "?";
+        case State::Flagged: return "\e[7m?\e[27m";
         case State::Shown: return numberOrEmpty();
         default: return "!";
         }

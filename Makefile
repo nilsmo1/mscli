@@ -4,6 +4,8 @@ OBJDIR=./obj
 OBJFILES=$(patsubst %.cpp,$(OBJDIR)/%.o, $(CPPFILES))
 BINARY=minesweeper
 
+.PHONY: all run clean
+
 all: $(BINARY)
 
 $(BINARY): $(OBJFILES)
